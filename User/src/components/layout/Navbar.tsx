@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -10,17 +11,34 @@ import {
   User,
   Menu,
   X,
-  Sun,
-  Moon,
+  LogOut,
 } from "lucide-react";
 import { useCartStore, useWishlistStore, useUIStore } from "@/lib/store";
+import { useAuthStore } from "@/lib/authStore";
 
 export function Navbar() {
+  const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
-  const { cartDrawerOpen, setCartDrawerOpen, mobileMenuOpen, setMobileMenuOpen, theme, toggleTheme } = useUIStore();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const { cartDrawerOpen, setCartDrawerOpen, mobileMenuOpen, setMobileMenuOpen } = useUIStore();
   const cartItems = useCartStore((s) => s.items);
   const wishlistItems = useWishlistStore((s) => s.items);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const close = () => setAccountOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setAccountOpen(false);
+    router.replace("/");
+    router.refresh();
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -132,9 +150,77 @@ export function Navbar() {
             </button>
 
             {/* Account */}
-            <Link href="/account" className="hidden sm:flex w-10 h-10 rounded-full items-center justify-center hover:bg-charcoal/10 transition-colors" aria-label="Account">
-              <User size={20} className="text-text-secondary" />
-            </Link>
+            <div className="relative hidden sm:block" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setAccountOpen((v) => !v)}
+                className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-charcoal/10 transition-colors"
+                aria-label="Account"
+              >
+                {user ? (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-mint to-mint-dark flex items-center justify-center text-midnight text-xs font-bold">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                ) : (
+                  <User size={20} className="text-text-secondary" />
+                )}
+              </button>
+              <AnimatePresence>
+                {accountOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    className="absolute right-0 top-12 w-64 bg-white rounded-2xl shadow-xl border border-charcoal/10 overflow-hidden z-50"
+                  >
+                    {user ? (
+                      <>
+                        <div className="p-4 border-b border-charcoal/5">
+                          <p className="text-sm font-bold text-text-primary truncate">{user.name}</p>
+                          <p className="text-[11px] text-text-secondary truncate">{user.email}</p>
+                        </div>
+                        <Link
+                          href="/account/orders"
+                          onClick={() => setAccountOpen(false)}
+                          className="block px-4 py-3 text-xs font-semibold text-text-primary hover:bg-surface"
+                        >
+                          My Orders
+                        </Link>
+                        <Link
+                          href="/wishlist"
+                          onClick={() => setAccountOpen(false)}
+                          className="block px-4 py-3 text-xs font-semibold text-text-primary hover:bg-surface"
+                        >
+                          Wishlist
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 px-4 py-3 text-xs font-semibold text-coral hover:bg-coral/5 border-t border-charcoal/5"
+                        >
+                          <LogOut className="w-3.5 h-3.5" /> Sign out
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Link
+                          href="/login"
+                          onClick={() => setAccountOpen(false)}
+                          className="block px-4 py-3 text-xs font-semibold text-text-primary hover:bg-surface"
+                        >
+                          Sign in
+                        </Link>
+                        <Link
+                          href="/register"
+                          onClick={() => setAccountOpen(false)}
+                          className="block px-4 py-3 text-xs font-semibold text-mint hover:bg-surface border-t border-charcoal/5"
+                        >
+                          Create account
+                        </Link>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* Mobile Menu Toggle */}
             <button

@@ -1,18 +1,28 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
-import { ShoppingBag, Heart, Star, Eye } from "lucide-react";
-import { featuredProducts } from "@/lib/data/products";
-import { useCartStore, useWishlistStore, useUIStore } from "@/lib/store";
+import { ShoppingBag, Heart, Star } from "lucide-react";
+import { useCartStore, useWishlistStore, useUIStore, Product } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
+import { http } from "@/lib/api";
+import { mapApiProduct } from "@/lib/api-types";
+import type { ApiProduct, Paginated } from "@/lib/api-types";
 
 export function FeaturedProducts() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    http
+      .get<Paginated<ApiProduct>>("/products?sort=rating&limit=8")
+      .then((res) => setFeaturedProducts(res.data.map(mapApiProduct)))
+      .catch(() => setFeaturedProducts([]));
+  }, []);
 
   return (
     <section ref={ref} className="section-padding bg-surface overflow-hidden">
@@ -52,7 +62,7 @@ export function FeaturedProducts() {
   );
 }
 
-function ProductCard({ product, index, isInView }: { product: typeof featuredProducts[0]; index: number; isInView: boolean }) {
+function ProductCard({ product, index, isInView }: { product: Product; index: number; isInView: boolean }) {
   const addItem = useCartStore((s) => s.addItem);
   const setCartDrawerOpen = useUIStore((s) => s.setCartDrawerOpen);
   const { toggleItem, hasItem } = useWishlistStore();

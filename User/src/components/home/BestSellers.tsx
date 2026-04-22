@@ -1,13 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion, useInView, AnimatePresence } from "framer-motion";
+import { motion, useInView } from "framer-motion";
 import { ShoppingBag, ChevronLeft, ChevronRight, Star, Flame } from "lucide-react";
-import { bestSellers } from "@/lib/data/products";
-import { useCartStore, useUIStore } from "@/lib/store";
+import { useCartStore, useUIStore, Product } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
+import { http } from "@/lib/api";
+import { mapApiProduct } from "@/lib/api-types";
+import type { ApiProduct, Paginated } from "@/lib/api-types";
 
 export function BestSellers() {
   const ref = useRef(null);
@@ -15,6 +17,14 @@ export function BestSellers() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const addItem = useCartStore((s) => s.addItem);
   const setCartDrawerOpen = useUIStore((s) => s.setCartDrawerOpen);
+  const [bestSellers, setBestSellers] = useState<Product[]>([]);
+
+  useEffect(() => {
+    http
+      .get<Paginated<ApiProduct>>("/products?sort=best_sellers&limit=8")
+      .then((res) => setBestSellers(res.data.map(mapApiProduct)))
+      .catch(() => setBestSellers([]));
+  }, []);
 
   const itemsPerPage = 4;
   const maxIndex = Math.max(0, bestSellers.length - itemsPerPage);

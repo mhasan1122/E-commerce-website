@@ -18,11 +18,13 @@ import {
   ArrowUpDown,
   Filter,
   Sparkles,
+  Loader2,
 } from "lucide-react";
-import { products } from "@/lib/data/products";
-import { categories } from "@/lib/data/categories";
 import { useCartStore, useWishlistStore, useUIStore, Product } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
+import { http, ApiError } from "@/lib/api";
+import { mapApiProduct } from "@/lib/api-types";
+import type { ApiCategory, ApiProduct, Envelope, Paginated } from "@/lib/api-types";
 
 type SortOption = "featured" | "price-asc" | "price-desc" | "rating" | "newest" | "popular";
 
@@ -35,20 +37,30 @@ const sortOptions: { value: SortOption; label: string }[] = [
   { value: "newest", label: "Newest" },
 ];
 
-const priceRanges = [
-  { label: "All Prices", min: 0, max: Infinity },
-  { label: "Under ৳5,000", min: 0, max: 5000 },
-  { label: "৳5,000 – ৳10,000", min: 5000, max: 10000 },
-  { label: "৳10,000 – ৳20,000", min: 10000, max: 20000 },
-  { label: "৳20,000 – ৳50,000", min: 20000, max: 50000 },
-  { label: "৳50,000+", min: 50000, max: Infinity },
+const priceRanges: { label: string; min: number; max: number | null }[] = [
+  { label: "All Prices", min: 0, max: null },
+  { label: "Under ৳5,000", min: 0, max: 4999 },
+  { label: "৳5,000 – ৳10,000", min: 5000, max: 9999 },
+  { label: "৳10,000 – ৳20,000", min: 10000, max: 19999 },
+  { label: "৳20,000 – ৳50,000", min: 20000, max: 49999 },
+  { label: "৳50,000+", min: 50000, max: null },
 ];
+
+const sortToApi: Record<SortOption, string | undefined> = {
+  featured: undefined,
+  popular: "best_sellers",
+  rating: "rating",
+  "price-asc": "price_asc",
+  "price-desc": "price_desc",
+  newest: "newest",
+};
 
 export default function ProductsClient() {
   const searchParams = useSearchParams();
   const categoryParam = searchParams.get("category");
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(categoryParam || "all");
   const [sort, setSort] = useState<SortOption>("featured");
   const [priceRange, setPriceRange] = useState(0);
@@ -59,14 +71,19 @@ export default function ProductsClient() {
   const headerRef = useRef(null);
   const headerInView = useInView(headerRef, { once: true });
 
-  // Sync URL category param
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (categoryParam) {
-      setSelectedCategory(categoryParam);
-    }
+    if (categoryParam) setSelectedCategory(categoryParam);
   }, [categoryParam]);
 
-  // Close dropdown on click outside
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
@@ -77,62 +94,52 @@ export default function ProductsClient() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filteredProducts = useMemo(() => {
-    let result = [...products];
+  // Load categories once
+  useEffect(() => {
+    http
+      .get<Envelope<ApiCategory[]>>("/categories")
+      .then((res) => setCategories(res.data))
+      .catch(() => {});
+  }, []);
 
-    // Category filter
-    if (selectedCategory !== "all") {
-      result = result.filter(
-        (p) =>
-          p.category.toLowerCase().replace(/\s*&\s*/g, "-").replace(/\s+/g, "-") ===
-          selectedCategory.toLowerCase()
-      );
-    }
+  // Load products based on filters
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+        if (selectedCategory !== "all") params.set("category", selectedCategory);
+        const apiSort = sortToApi[sort];
+        if (apiSort) params.set("sort", apiSort);
+        const range = priceRanges[priceRange];
+        if (range.min > 0) params.set("minPrice", String(range.min));
+        if (range.max != null) params.set("maxPrice", String(range.max));
+        params.set("limit", "48");
+        const res = await http.get<Paginated<ApiProduct>>(`/products?${params.toString()}`);
+        setProducts(res.data.map(mapApiProduct));
+      } catch (err) {
+        if (err instanceof ApiError) {
+          console.error("[products]", err.message);
+        }
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [debouncedSearch, selectedCategory, sort, priceRange]);
 
-    // Search
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q)
-      );
-    }
-
-    // Price range
-    const range = priceRanges[priceRange];
-    result = result.filter((p) => p.price >= range.min && p.price < range.max);
-
-    // Sort
-    switch (sort) {
-      case "price-asc":
-        result.sort((a, b) => a.price - b.price);
-        break;
-      case "price-desc":
-        result.sort((a, b) => b.price - a.price);
-        break;
-      case "rating":
-        result.sort((a, b) => b.rating - a.rating);
-        break;
-      case "popular":
-        result.sort((a, b) => b.soldCount - a.soldCount);
-        break;
-      case "newest":
-        result.sort((a, b) => (b.badge === "new" ? 1 : 0) - (a.badge === "new" ? 1 : 0));
-        break;
-      default:
-        break;
-    }
-
-    return result;
-  }, [selectedCategory, search, sort, priceRange]);
-
-  const activeFilters = [
-    selectedCategory !== "all" && `Category: ${selectedCategory}`,
-    priceRange !== 0 && `Price: ${priceRanges[priceRange].label}`,
-    search.trim() && `Search: "${search}"`,
-  ].filter(Boolean);
+  const activeFilters = useMemo(
+    () =>
+      [
+        selectedCategory !== "all" &&
+          `Category: ${categories.find((c) => c.slug === selectedCategory)?.name || selectedCategory}`,
+        priceRange !== 0 && `Price: ${priceRanges[priceRange].label}`,
+        search.trim() && `Search: "${search}"`,
+      ].filter(Boolean) as string[],
+    [selectedCategory, priceRange, search, categories]
+  );
 
   const clearFilters = useCallback(() => {
     setSelectedCategory("all");
@@ -140,12 +147,23 @@ export default function ProductsClient() {
     setSearch("");
   }, []);
 
+  const displayedTitle =
+    selectedCategory !== "all"
+      ? categories.find((c) => c.slug === selectedCategory)?.name || "Shop"
+      : "All Products";
+
   return (
     <div className="min-h-screen bg-surface pt-24 pb-20">
       {/* Hero Header */}
       <div ref={headerRef} className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[#F5F0EB]" />
-        <div className="absolute inset-0 opacity-[0.025]" style={{ backgroundImage: `radial-gradient(circle, #000 0.5px, transparent 0.5px)`, backgroundSize: "24px 24px" }} />
+        <div
+          className="absolute inset-0 opacity-[0.025]"
+          style={{
+            backgroundImage: `radial-gradient(circle, #000 0.5px, transparent 0.5px)`,
+            backgroundSize: "24px 24px",
+          }}
+        />
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -157,9 +175,7 @@ export default function ProductsClient() {
               <Sparkles size={14} className="text-amber-400" /> Premium Collection
             </span>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold font-[family-name:var(--font-heading)] text-gray-900 mb-4">
-              {selectedCategory !== "all"
-                ? categories.find((c) => c.slug === selectedCategory)?.name || "Shop"
-                : "All Products"}
+              {displayedTitle}
             </h1>
             <p className="text-gray-500 text-lg max-w-xl mx-auto">
               Discover our curated collection of premium products, handpicked for quality and style.
@@ -171,7 +187,6 @@ export default function ProductsClient() {
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-8">
         {/* Search + Controls Bar */}
         <div className="flex flex-col md:flex-row gap-4 mb-6">
-          {/* Search */}
           <div className="flex-1 relative">
             <Search size={18} className="absolute top-1/2 left-4 -translate-y-1/2 text-text-muted" />
             <input
@@ -191,9 +206,7 @@ export default function ProductsClient() {
             )}
           </div>
 
-          {/* Controls */}
           <div className="flex items-center gap-3">
-            {/* Filter Toggle */}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
@@ -211,16 +224,13 @@ export default function ProductsClient() {
               )}
             </button>
 
-            {/* Sort Dropdown */}
             <div ref={sortRef} className="relative">
               <button
                 onClick={() => setShowSort(!showSort)}
                 className="flex items-center gap-2 px-4 py-3 rounded-xl bg-surface-elevated border border-border-subtle text-sm font-medium text-text-secondary hover:border-mint/30 transition-all"
               >
                 <ArrowUpDown size={16} />
-                <span className="hidden sm:inline">
-                  {sortOptions.find((s) => s.value === sort)?.label}
-                </span>
+                <span className="hidden sm:inline">{sortOptions.find((s) => s.value === sort)?.label}</span>
                 <ChevronDown size={14} className={`transition-transform ${showSort ? "rotate-180" : ""}`} />
               </button>
               <AnimatePresence>
@@ -253,7 +263,6 @@ export default function ProductsClient() {
               </AnimatePresence>
             </div>
 
-            {/* View Mode Toggle */}
             <div className="hidden md:flex items-center bg-surface-elevated border border-border-subtle rounded-xl overflow-hidden">
               <button
                 onClick={() => setViewMode("grid")}
@@ -275,7 +284,7 @@ export default function ProductsClient() {
           </div>
         </div>
 
-        {/* Filters Sidebar / Collapsible */}
+        {/* Filters */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
@@ -286,7 +295,6 @@ export default function ProductsClient() {
               className="overflow-hidden mb-6"
             >
               <div className="glass-card p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Categories */}
                 <div>
                   <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
                     <Filter size={14} className="text-mint" /> Category
@@ -318,7 +326,6 @@ export default function ProductsClient() {
                   </div>
                 </div>
 
-                {/* Price Range */}
                 <div>
                   <h3 className="text-sm font-semibold text-text-primary mb-3">Price Range</h3>
                   <div className="flex flex-wrap gap-2">
@@ -338,7 +345,6 @@ export default function ProductsClient() {
                   </div>
                 </div>
 
-                {/* Clear */}
                 <div className="flex items-end">
                   {activeFilters.length > 0 && (
                     <button
@@ -354,7 +360,6 @@ export default function ProductsClient() {
           )}
         </AnimatePresence>
 
-        {/* Active Filters Strip */}
         {activeFilters.length > 0 && (
           <div className="flex items-center gap-2 mb-6 flex-wrap">
             <span className="text-xs text-text-muted">Active:</span>
@@ -369,17 +374,24 @@ export default function ProductsClient() {
           </div>
         )}
 
-        {/* Results Count */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-sm text-text-muted">
-            Showing <span className="font-semibold text-text-primary">{filteredProducts.length}</span> product
-            {filteredProducts.length !== 1 ? "s" : ""}
+            Showing <span className="font-semibold text-text-primary">{products.length}</span> product
+            {products.length !== 1 ? "s" : ""}
           </p>
         </div>
 
-        {/* Product Grid */}
-        {filteredProducts.length === 0 ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-24 text-center">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 text-text-muted">
+            <Loader2 className="w-8 h-8 animate-spin text-mint" />
+            <p className="mt-3 text-sm font-medium">Loading products…</p>
+          </div>
+        ) : products.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col items-center justify-center py-24 text-center"
+          >
             <div className="w-24 h-24 rounded-full bg-charcoal/5 flex items-center justify-center mb-6">
               <Search size={40} className="text-text-muted" />
             </div>
@@ -395,7 +407,7 @@ export default function ProductsClient() {
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             <AnimatePresence mode="popLayout">
-              {filteredProducts.map((product, i) => (
+              {products.map((product, i) => (
                 <ProductGridCard key={product.id} product={product} index={i} />
               ))}
             </AnimatePresence>
@@ -403,7 +415,7 @@ export default function ProductsClient() {
         ) : (
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">
-              {filteredProducts.map((product, i) => (
+              {products.map((product, i) => (
                 <ProductListCard key={product.id} product={product} index={i} />
               ))}
             </AnimatePresence>
@@ -443,11 +455,14 @@ function ProductGridCard({ product, index }: { product: Product; index: number }
     >
       <Link href={`/products/${product.slug}`} className="block">
         <div className="glass-card overflow-hidden">
-          {/* Image */}
           <div className="relative aspect-square overflow-hidden bg-charcoal/5">
             {product.badge && (
               <div className={`ribbon ribbon-${product.badge}`}>
-                {product.badge === "hot" ? "🔥 Hot" : product.badge === "new" ? "✨ New" : `${discount}% Off`}
+                {product.badge === "hot"
+                  ? "🔥 Hot"
+                  : product.badge === "new"
+                    ? "✨ New"
+                    : `${discount}% Off`}
               </div>
             )}
             <Image
@@ -456,10 +471,10 @@ function ProductGridCard({ product, index }: { product: Product; index: number }
               fill
               className="object-cover transition-transform duration-700 group-hover:scale-110"
               sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 25vw"
+              unoptimized
             />
             <div className="absolute inset-0 bg-gradient-to-t from-midnight/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-            {/* Quick Actions */}
             <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
               <motion.button
                 whileTap={{ scale: 0.9 }}
@@ -485,7 +500,6 @@ function ProductGridCard({ product, index }: { product: Product; index: number }
             </div>
           </div>
 
-          {/* Info */}
           <div className="p-4">
             <p className="text-xs text-text-muted uppercase tracking-wider mb-1">{product.category}</p>
             <h3 className="text-sm font-semibold text-text-primary truncate group-hover:text-mint transition-colors">
@@ -493,12 +507,14 @@ function ProductGridCard({ product, index }: { product: Product; index: number }
             </h3>
             <div className="flex items-center gap-1 mt-2">
               <Star size={14} className="text-gold fill-gold" />
-              <span className="text-xs font-semibold text-text-primary">{product.rating}</span>
+              <span className="text-xs font-semibold text-text-primary">{product.rating.toFixed(1)}</span>
               <span className="text-xs text-text-muted">({product.reviewCount.toLocaleString()})</span>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-lg font-bold text-mint">{formatPrice(product.price)}</span>
-              {product.oldPrice && <span className="text-sm text-text-muted line-through">{formatPrice(product.oldPrice)}</span>}
+              {product.oldPrice && (
+                <span className="text-sm text-text-muted line-through">{formatPrice(product.oldPrice)}</span>
+              )}
             </div>
           </div>
         </div>
@@ -528,11 +544,14 @@ function ProductListCard({ product, index }: { product: Product; index: number }
     >
       <Link href={`/products/${product.slug}`} className="block">
         <div className="glass-card overflow-hidden flex flex-col sm:flex-row group">
-          {/* Image */}
           <div className="relative w-full sm:w-56 h-56 sm:h-auto shrink-0 overflow-hidden bg-charcoal/5">
             {product.badge && (
               <div className={`ribbon ribbon-${product.badge}`}>
-                {product.badge === "hot" ? "🔥 Hot" : product.badge === "new" ? "✨ New" : `${discount}% Off`}
+                {product.badge === "hot"
+                  ? "🔥 Hot"
+                  : product.badge === "new"
+                    ? "✨ New"
+                    : `${discount}% Off`}
               </div>
             )}
             <Image
@@ -541,10 +560,10 @@ function ProductListCard({ product, index }: { product: Product; index: number }
               fill
               className="object-cover transition-transform duration-700 group-hover:scale-105"
               sizes="224px"
+              unoptimized
             />
           </div>
 
-          {/* Info */}
           <div className="flex-1 p-5 flex flex-col justify-between">
             <div>
               <p className="text-xs text-text-muted uppercase tracking-wider mb-1">{product.category}</p>
@@ -554,16 +573,22 @@ function ProductListCard({ product, index }: { product: Product; index: number }
               <p className="text-sm text-text-secondary mt-2 line-clamp-2">{product.description}</p>
               <div className="flex items-center gap-1 mt-3">
                 <Star size={14} className="text-gold fill-gold" />
-                <span className="text-sm font-semibold text-text-primary">{product.rating}</span>
-                <span className="text-sm text-text-muted">({product.reviewCount.toLocaleString()} reviews)</span>
-                <span className="text-xs text-text-muted ml-2">• {product.soldCount.toLocaleString()} sold</span>
+                <span className="text-sm font-semibold text-text-primary">{product.rating.toFixed(1)}</span>
+                <span className="text-sm text-text-muted">
+                  ({product.reviewCount.toLocaleString()} reviews)
+                </span>
+                <span className="text-xs text-text-muted ml-2">
+                  • {product.soldCount.toLocaleString()} sold
+                </span>
               </div>
 
-              {/* Features */}
-              {product.features && (
+              {product.features && product.features.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {product.features.slice(0, 3).map((f) => (
-                    <span key={f} className="px-2 py-0.5 rounded-md bg-surface text-text-muted text-xs border border-border-subtle">
+                    <span
+                      key={f}
+                      className="px-2 py-0.5 rounded-md bg-surface text-text-muted text-xs border border-border-subtle"
+                    >
                       {f}
                     </span>
                   ))}
@@ -574,7 +599,9 @@ function ProductListCard({ product, index }: { product: Product; index: number }
             <div className="flex items-center justify-between mt-4">
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold text-mint">{formatPrice(product.price)}</span>
-                {product.oldPrice && <span className="text-sm text-text-muted line-through">{formatPrice(product.oldPrice)}</span>}
+                {product.oldPrice && (
+                  <span className="text-sm text-text-muted line-through">{formatPrice(product.oldPrice)}</span>
+                )}
               </div>
               <div className="flex gap-2">
                 <motion.button
@@ -613,4 +640,3 @@ function ProductListCard({ product, index }: { product: Product; index: number }
     </motion.div>
   );
 }
-

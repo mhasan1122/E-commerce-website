@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { http } from "./api";
 
 /* ─── Product Type ─── */
 export interface Product {
@@ -88,20 +89,84 @@ interface WishlistStore {
   items: Product[];
   toggleItem: (product: Product) => void;
   hasItem: (productId: string) => boolean;
+  syncFromServer: () => Promise<void>;
+  clear: () => void;
+}
+
+interface WishlistEnvelope {
+  success: true;
+  data: Array<{
+    id: number;
+    product: {
+      id: string;
+      name: string;
+      slug: string;
+      price: number;
+      oldPrice?: number;
+      images: string[];
+      rating: number;
+      reviewCount: number;
+    };
+  }>;
+}
+
+function mapWishlistProduct(item: WishlistEnvelope["data"][number]["product"]): Product {
+  return {
+    id: String(item.id),
+    name: item.name,
+    slug: item.slug,
+    price: Number(item.price),
+    oldPrice: item.oldPrice != null ? Number(item.oldPrice) : undefined,
+    images: Array.isArray(item.images) && item.images.length > 0 ? item.images : [],
+    category: "",
+    rating: Number(item.rating ?? 0),
+    reviewCount: item.reviewCount ?? 0,
+    soldCount: 0,
+    stock: 0,
+    description: "",
+  };
 }
 
 export const useWishlistStore = create<WishlistStore>((set, get) => ({
   items: [],
   toggleItem: (product) => {
-    set((state) => {
-      const exists = state.items.find((i) => i.id === product.id);
-      if (exists) {
-        return { items: state.items.filter((i) => i.id !== product.id) };
+    const numericProductId = Number(product.id);
+    if (!Number.isFinite(numericProductId) || numericProductId <= 0) return;
+
+    const exists = get().items.some((i) => i.id === product.id);
+    set((state) =>
+      exists
+        ? { items: state.items.filter((i) => i.id !== product.id) }
+        : { items: [...state.items, product] }
+    );
+
+    void (async () => {
+      try {
+        if (exists) {
+          await http.delete(`/wishlist/${numericProductId}`);
+        } else {
+          await http.post("/wishlist", { productId: numericProductId });
+        }
+      } catch {
+        // Revert optimistic update if backend sync fails.
+        set((state) =>
+          exists
+            ? { items: [...state.items, product] }
+            : { items: state.items.filter((i) => i.id !== product.id) }
+        );
       }
-      return { items: [...state.items, product] };
-    });
+    })();
   },
   hasItem: (productId) => get().items.some((i) => i.id === productId),
+  syncFromServer: async () => {
+    try {
+      const res = await http.get<WishlistEnvelope>("/wishlist");
+      set({ items: res.data.map((entry) => mapWishlistProduct(entry.product)) });
+    } catch {
+      // Keep local wishlist for guests.
+    }
+  },
+  clear: () => set({ items: [] }),
 }));
 
 /* ─── UI Store ─── */

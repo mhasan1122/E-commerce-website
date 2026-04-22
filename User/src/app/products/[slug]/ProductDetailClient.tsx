@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,10 +20,32 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useCartStore, useWishlistStore, useUIStore, Product } from "@/lib/store";
-import { products } from "@/lib/data/products";
+import { http } from "@/lib/api";
+import { mapApiProduct } from "@/lib/api-types";
+import type { ApiProduct, Paginated } from "@/lib/api-types";
 import { formatPrice } from "@/lib/utils";
 
 export function ProductDetailClient({ product }: { product: Product }) {
+  const [related, setRelated] = useState<Product[]>([]);
+
+  useEffect(() => {
+    if (!product.category) return;
+    const run = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("category", product.category);
+        params.set("limit", "8");
+        const res = await http.get<Paginated<ApiProduct>>(`/products?${params.toString()}`);
+        setRelated(
+          res.data.map(mapApiProduct).filter((p) => p.id !== product.id).slice(0, 4)
+        );
+      } catch {
+        setRelated([]);
+      }
+    };
+    run();
+  }, [product.category, product.id]);
+
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || "");
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || "");
@@ -52,7 +74,6 @@ export function ProductDetailClient({ product }: { product: Product }) {
   const nextImage = () => setSelectedImage((prev) => (prev + 1) % product.images.length);
   const prevImage = () => setSelectedImage((prev) => (prev - 1 + product.images.length) % product.images.length);
 
-  const related = products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 4);
 
   return (
     <div className="min-h-screen bg-surface pt-24 pb-20">

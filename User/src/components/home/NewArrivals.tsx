@@ -1,22 +1,31 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
 import { Star, ShoppingBag } from "lucide-react";
-import { newArrivals } from "@/lib/data/products";
-import { useCartStore, useUIStore } from "@/lib/store";
+import { useCartStore, useUIStore, Product } from "@/lib/store";
 import { formatPrice } from "@/lib/utils";
+import { http } from "@/lib/api";
+import { mapApiProduct } from "@/lib/api-types";
+import type { ApiProduct, Paginated } from "@/lib/api-types";
 
 export function NewArrivals() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
   const addItem = useCartStore((s) => s.addItem);
   const setCartDrawerOpen = useUIStore((s) => s.setCartDrawerOpen);
+  const [newArrivals, setNewArrivals] = useState<Product[]>([]);
 
-  // Duplicate to fill out the masonry grid nicely
-  const allProducts = [...newArrivals, ...newArrivals.slice(0, 4)];
+  useEffect(() => {
+    http
+      .get<Paginated<ApiProduct>>("/products?sort=newest&limit=6")
+      .then((res) => setNewArrivals(res.data.map(mapApiProduct)))
+      .catch(() => setNewArrivals([]));
+  }, []);
+
+  const allProducts = newArrivals;
 
   return (
     <section ref={ref} className="section-padding bg-surface-elevated">

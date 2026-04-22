@@ -1,18 +1,65 @@
 "use client";
 
-import { useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
 import { Cpu, Shirt, Lamp, Sparkles, Dumbbell, Watch } from "lucide-react";
-import { categories } from "@/lib/data/categories";
+import { http } from "@/lib/api";
+import type { ApiCategory, Envelope } from "@/lib/api-types";
 
 const iconMap: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  Cpu, Shirt, Lamp, Sparkles, Dumbbell, Watch,
+  Cpu,
+  Shirt,
+  Lamp,
+  Sparkles,
+  Dumbbell,
+  Watch,
 };
+
+type UiCategory = {
+  id: number;
+  name: string;
+  slug: string;
+  icon: string;
+  image: string;
+  gradient: string;
+  productCount: number;
+};
+
+const fallbackGradients = [
+  "from-indigo-900/80 via-indigo-600/50 to-transparent",
+  "from-rose-900/80 via-rose-600/50 to-transparent",
+  "from-amber-900/80 via-amber-600/50 to-transparent",
+  "from-emerald-900/80 via-emerald-600/50 to-transparent",
+  "from-sky-900/80 via-sky-600/50 to-transparent",
+  "from-violet-900/80 via-violet-600/50 to-transparent",
+];
 
 export function CategoriesGrid() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const [categories, setCategories] = useState<UiCategory[]>([]);
+
+  useEffect(() => {
+    http
+      .get<Envelope<ApiCategory[]>>("/categories")
+      .then((res) =>
+        setCategories(
+          res.data.map((c, i) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            icon: c.icon || "Cpu",
+            image:
+              c.image ||
+              `https://source.unsplash.com/600x450/?${encodeURIComponent(c.name)}`,
+            gradient: c.gradient || fallbackGradients[i % fallbackGradients.length],
+            productCount: c.productCount,
+          }))
+        )
+      )
+      .catch(() => setCategories([]));
+  }, []);
 
   return (
     <section ref={ref} className="section-padding bg-surface-elevated">
@@ -46,7 +93,7 @@ function CategoryCard({
   index,
   isInView,
 }: {
-  category: typeof categories[0];
+  category: UiCategory;
   index: number;
   isInView: boolean;
 }) {
