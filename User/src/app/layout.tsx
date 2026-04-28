@@ -40,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${playfair.variable} ${dmSans.variable}`} suppressHydrationWarning data-scroll-behavior="smooth">
-      <body className="min-h-screen flex flex-col antialiased" suppressHydrationWarning>
+      <body suppressHydrationWarning className="min-h-screen flex flex-col antialiased" cz-shortcut-listen="true">
         <ThemeProvider>
           <AuthProvider>
             <Navbar />

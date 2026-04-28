@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${dmsans.variable} antialiased min-h-screen bg-surface selection:bg-mint/30`}>
+      <body suppressHydrationWarning className={`${dmsans.variable} antialiased min-h-screen bg-surface selection:bg-mint/30`} cz-shortcut-listen="true">
         {children}
       </body>
     </html>
