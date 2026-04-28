@@ -36,16 +36,19 @@ export interface ProductsParams {
 export const productsApi = {
   getProducts: async (params?: ProductsParams): Promise<{ products: Product[]; total: number }> => {
     const { data } = await api.get('/products', { params });
-    return data;
+    return {
+      products: data.data,
+      total: data.total,
+    };
   },
 
   getProduct: async (id: number): Promise<Product> => {
     const { data } = await api.get(`/products/${id}`);
-    return data;
+    return data.data;
   },
 
   getCategories: async (): Promise<Category[]> => {
     const { data } = await api.get('/categories');
-    return data;
+    return data.data;
   },
 };

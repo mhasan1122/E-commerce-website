@@ -11,12 +11,11 @@ export interface WishlistItem {
 export const wishlistApi = {
   getWishlist: async (): Promise<WishlistItem[]> => {
     const { data } = await api.get('/wishlist');
-    return data;
+    return data.data;
   },
 
-  addItem: async (productId: number): Promise<WishlistItem> => {
-    const { data } = await api.post('/wishlist', { productId });
-    return data;
+  addItem: async (productId: number): Promise<void> => {
+    await api.post('/wishlist', { productId });
   },
 
   removeItem: async (productId: number): Promise<void> => {

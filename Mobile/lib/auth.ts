@@ -35,13 +35,13 @@ export const authApi = {
   },
 
   getMe: async (): Promise<User> => {
-    const { data } = await api.get<User>('/auth/me');
-    return data;
+    const { data } = await api.get('/auth/me');
+    return data.user;
   },
 
   updateProfile: async (updates: Partial<User>): Promise<User> => {
-    const { data } = await api.put<User>('/users/me/profile', updates);
-    return data;
+    const { data } = await api.put('/auth/me/profile', updates);
+    return data.user;
   },
 
   changePassword: async (passwords: { currentPassword: string; newPassword: string }): Promise<void> => {

@@ -22,22 +22,27 @@ export interface Cart {
 export const cartApi = {
   getCart: async (): Promise<Cart> => {
     const { data } = await api.get('/cart');
-    return data;
+    return {
+      id: data.cartId,
+      userId: data.userId,
+      items: data.items,
+      subtotal: data.totalPrice,
+      shipping: 0,
+      tax: 0,
+      total: data.totalPrice,
+    };
   },
 
-  addItem: async (productId: number, quantity: number): Promise<Cart> => {
-    const { data } = await api.post('/cart/items', { productId, quantity });
-    return data;
+  addItem: async (productId: number, quantity: number): Promise<void> => {
+    await api.post('/cart/items', { productId, quantity });
   },
 
-  updateItem: async (itemId: number, quantity: number): Promise<Cart> => {
-    const { data } = await api.put(`/cart/items/${itemId}`, { quantity });
-    return data;
+  updateItem: async (itemId: number, quantity: number): Promise<void> => {
+    await api.put(`/cart/items/${itemId}`, { quantity });
   },
 
-  removeItem: async (itemId: number): Promise<Cart> => {
-    const { data } = await api.delete(`/cart/items/${itemId}`);
-    return data;
+  removeItem: async (itemId: number): Promise<void> => {
+    await api.delete(`/cart/items/${itemId}`);
   },
 
   clearCart: async (): Promise<void> => {

@@ -42,16 +42,19 @@ export interface CreateOrderData {
 export const ordersApi = {
   getOrders: async (): Promise<Order[]> => {
     const { data } = await api.get('/orders/my');
-    return data;
+    return data.data;
   },
 
   getOrder: async (id: number): Promise<Order> => {
     const { data } = await api.get(`/orders/${id}`);
-    return data;
+    return data.data;
   },
 
-  createOrder: async (orderData: CreateOrderData): Promise<Order> => {
-    const { data } = await api.post('/orders', orderData);
+  createOrder: async (orderData: CreateOrderData): Promise<any> => {
+    const { data } = await api.post('/orders', {
+      ...orderData,
+      useCart: true, // Assuming mobile always orders from cart for now
+    });
     return data;
   },
 };
