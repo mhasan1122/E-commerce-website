@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CreditCard,
@@ -29,13 +29,19 @@ import { formatPrice } from "@/lib/utils";
 
 type Step = 1 | 2 | 3;
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { items, totalPrice, clearCart } = useCartStore();
   const user = useAuthStore((s) => s.user);
   const ready = useAuthStore((s) => s.ready);
 
   const [step, setStep] = useState<Step>(1);
+
+  // Jump straight to payment step when redirected from failed payment
+  useEffect(() => {
+    if (searchParams.get("step") === "payment") setStep(2);
+  }, [searchParams]);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -51,7 +57,7 @@ export default function CheckoutPage() {
     state: "",
     zip: "",
     country: "Bangladesh",
-    paymentMethod: "cod" as "cod" | "card",
+    paymentMethod: "cod" as "cod" | "card" | "paystation",
     cardNumber: "",
     cardName: "",
     expiry: "",
@@ -102,11 +108,21 @@ export default function CheckoutPage() {
 
       const res = await http.post<{
         success: true;
-        data: { id: number; orderNumber: string };
+        orderId: number;
+        orderNumber: string;
+        total: number;
+        paymentUrl?: string | null;
       }>("/orders", payload);
 
+      if (res.paymentUrl) {
+        // Cart stays intact until payment is confirmed on the success page
+        window.location.href = res.paymentUrl;
+        return;
+      }
+
+      // COD — order is confirmed immediately, safe to clear
       clearCart();
-      setOrderNumber(res.data.orderNumber);
+      setOrderNumber(res.orderNumber);
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "Failed to place order");
     } finally {
@@ -321,20 +337,30 @@ export default function CheckoutPage() {
                         </span>
                       </button>
                       <button
-                        onClick={() => updateForm("paymentMethod", "card")}
+                        onClick={() => updateForm("paymentMethod", "paystation")}
                         className={`p-4 rounded-xl border text-sm font-semibold text-left transition-all ${
-                          form.paymentMethod === "card"
+                          form.paymentMethod === "paystation"
                             ? "border-mint bg-mint/5 text-midnight"
                             : "border-border-subtle bg-surface-elevated text-text-secondary"
                         }`}
                       >
                         <CreditCard size={18} className="mb-2 text-mint" />
-                        Credit / Debit card
+                        Paystation
                         <span className="block text-[11px] font-normal text-text-muted mt-1">
-                          Secure payment via card
+                          Card, bKash, Nagad & more
                         </span>
                       </button>
                     </div>
+
+                    {/* Paystation trust badge */}
+                    {form.paymentMethod === "paystation" && (
+                      <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-mint/5 border border-mint/20">
+                        <Shield size={16} className="text-mint shrink-0" />
+                        <span className="text-xs text-text-secondary">
+                          You&apos;ll be securely redirected to Paystation&apos;s payment page to complete your purchase.
+                        </span>
+                      </div>
+                    )}
 
                     {form.paymentMethod === "card" && (
                       <>
@@ -420,6 +446,8 @@ export default function CheckoutPage() {
                       <p className="text-sm text-text-secondary uppercase tracking-wider">
                         {form.paymentMethod === "cod"
                           ? "Cash on Delivery"
+                          : form.paymentMethod === "paystation"
+                          ? "Paystation (Card / bKash / Nagad)"
                           : `Card ending in ${form.cardNumber.slice(-4) || "****"}`}
                       </p>
                     </div>
@@ -482,7 +510,9 @@ export default function CheckoutPage() {
                         ) : (
                           <Lock size={16} />
                         )}{" "}
-                        Place Order — {formatPrice(total)}
+                        {form.paymentMethod === "paystation"
+                          ? `Pay Now — ${formatPrice(total)}`
+                          : `Place Order — ${formatPrice(total)}`}
                       </motion.button>
                     </div>
                   </div>
@@ -568,6 +598,14 @@ export default function CheckoutPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense>
+      <CheckoutContent />
+    </Suspense>
   );
 }
 

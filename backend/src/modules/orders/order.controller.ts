@@ -4,6 +4,8 @@ import { ResultSetHeader, RowDataPacket } from "mysql2";
 import { pool } from "../../config/db";
 import { ApiError } from "../../utils/ApiError";
 import { AuthRequest } from "../../types";
+import { env } from "../../config/env";
+import { initiatePaystationPayment } from "../payment/payment.service";
 
 /* ---------- types ---------- */
 
@@ -277,11 +279,30 @@ export async function createOrder(req: AuthRequest, res: Response) {
 
     await conn.commit();
 
+    // Initiate Paystation payment outside the transaction
+    let paymentUrl: string | null = null;
+    if (body.paymentMethod === "paystation") {
+      try {
+        paymentUrl = await initiatePaystationPayment({
+          invoiceNumber: orderNumber,
+          amount: total,
+          customerName: req.user!.name,
+          customerEmail: req.user!.email,
+          customerPhone: body.shippingAddress.phone || "01700000000",
+          callbackUrl: `${env.serverUrl}/api/payment/callback`,
+        });
+      } catch (err) {
+        console.error("[Paystation] initiation failed:", err);
+        // Order is created; caller can retry or use another method
+      }
+    }
+
     res.status(201).json({
       success: true,
       orderId,
       orderNumber,
       total,
+      paymentUrl,
     });
   } catch (e) {
     await conn.rollback();

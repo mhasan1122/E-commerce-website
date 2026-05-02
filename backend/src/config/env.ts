@@ -39,6 +39,14 @@ export const env = {
     adminName: process.env.SEED_ADMIN_NAME || "Super Admin",
   },
 
+  paystation: {
+    merchantId: required("PAYSTATION_MERCHANT_ID"),
+    password: required("PAYSTATION_MERCHANT_PASSWORD"),
+    apiUrl: process.env.PAYSTATION_API_URL || "https://api.paystation.com.bd/initiate-payment",
+  },
+
+  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
+
   uploadDir: (() => {
     const dir = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

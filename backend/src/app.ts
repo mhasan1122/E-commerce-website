@@ -15,6 +15,7 @@ import cartRoutes from "./modules/cart/cart.routes";
 import wishlistRoutes from "./modules/wishlist/wishlist.routes";
 import orderRoutes from "./modules/orders/order.routes";
 import uploadRoutes from "./modules/upload/upload.routes";
+import paymentRoutes from "./modules/payment/payment.routes";
 
 export function createApp() {
   const app = express();
@@ -57,6 +58,7 @@ export function createApp() {
   app.use("/api/wishlist", wishlistRoutes);
   app.use("/api/orders", orderRoutes);
   app.use("/api/upload", uploadRoutes);
+  app.use("/api/payment", paymentRoutes);
 
   // 404 + error
   app.use(notFoundHandler);
