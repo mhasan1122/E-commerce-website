@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import path from "path";
 
 import { env } from "./config/env";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
@@ -13,6 +14,7 @@ import productRoutes from "./modules/products/product.routes";
 import cartRoutes from "./modules/cart/cart.routes";
 import wishlistRoutes from "./modules/wishlist/wishlist.routes";
 import orderRoutes from "./modules/orders/order.routes";
+import uploadRoutes from "./modules/upload/upload.routes";
 
 export function createApp() {
   const app = express();
@@ -31,6 +33,16 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
 
+  // serve uploaded images — allow cross-origin image loading from Admin/User apps
+  app.use(
+    "/uploads",
+    (_req, res, next) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      next();
+    },
+    express.static(path.resolve(env.uploadDir))
+  );
+
   // health
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ success: true, status: "ok", env: env.nodeEnv });
@@ -44,6 +56,7 @@ export function createApp() {
   app.use("/api/cart", cartRoutes);
   app.use("/api/wishlist", wishlistRoutes);
   app.use("/api/orders", orderRoutes);
+  app.use("/api/upload", uploadRoutes);
 
   // 404 + error
   app.use(notFoundHandler);

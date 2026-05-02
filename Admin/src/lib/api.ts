@@ -6,7 +6,7 @@
  */
 
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export class ApiError extends Error {
   status: number;
@@ -62,6 +62,35 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/* ---------- image upload ---------- */
+
+export async function uploadImage(file: File): Promise<string> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_URL}/upload`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const text = await res.text();
+  const data = text ? safeJson(text) : null;
+
+  if (!res.ok) {
+    const message =
+      (data && typeof data === "object" && "message" in data
+        ? String((data as { message: unknown }).message)
+        : null) || res.statusText;
+    throw new ApiError(res.status, message, data);
+  }
+  return (data as { url: string }).url;
 }
 
 /* ---------- typed helpers ---------- */

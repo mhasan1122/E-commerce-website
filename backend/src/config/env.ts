@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -37,4 +38,12 @@ export const env = {
     adminPassword: process.env.SEED_ADMIN_PASSWORD || "admin12345",
     adminName: process.env.SEED_ADMIN_NAME || "Super Admin",
   },
+
+  uploadDir: (() => {
+    const dir = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  })(),
+
+  serverUrl: process.env.SERVER_URL || `http://localhost:${process.env.PORT || "8000"}`,
 };

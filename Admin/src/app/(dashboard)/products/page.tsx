@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus,
   Search,
@@ -10,20 +10,25 @@ import {
   Trash2,
   Copy,
   Eye,
-  ArrowUpDown,
   Download,
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Upload,
+  X,
+  ImagePlus,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatPrice, cn } from "@/lib/utils";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
-import { http, ApiError } from "@/lib/api";
+import { http, ApiError, uploadImage } from "@/lib/api";
 import type { Product, Category, Paginated } from "@/lib/types";
 
 const PAGE_SIZE = 8;
+
+const IMG_PLACEHOLDER =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Crect width='56' height='56' fill='%23f1f5f9'/%3E%3Cpath d='M10 40 l12-16 8 10 6-7 10 13z' fill='%23cbd5e1'/%3E%3Ccircle cx='38' cy='18' r='5' fill='%23cbd5e1'/%3E%3C/svg%3E";
 
 function slugify(s: string): string {
   return s
@@ -144,6 +149,9 @@ export default function ProductsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -304,6 +312,53 @@ export default function ProductsPage() {
     toast("Products exported as CSV!");
   };
 
+  /* ---------- image upload helpers ---------- */
+
+  const appendImageUrls = (urls: string[]) => {
+    setForm((prev) => {
+      const existing = prev.images.trim();
+      const joined = urls.join("\n");
+      return { ...prev, images: existing ? `${existing}\n${joined}` : joined };
+    });
+  };
+
+  const handleFileUpload = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) return;
+    setUploadingImage(true);
+    try {
+      const urls: string[] = [];
+      for (const file of list) {
+        const url = await uploadImage(file);
+        urls.push(url);
+      }
+      appendImageUrls(urls);
+      toast(`${urls.length} image${urls.length > 1 ? "s" : ""} uploaded successfully`);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Image upload failed";
+      toast(msg, "error");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFileUpload(e.dataTransfer.files);
+  };
+
+  const removeImageUrl = (urlToRemove: string) => {
+    setForm((prev) => ({
+      ...prev,
+      images: prev.images
+        .split("\n")
+        .filter((u) => u.trim() !== urlToRemove.trim())
+        .join("\n"),
+    }));
+  };
+
   /* ---------- form UI ---------- */
   const formFields = (
     <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
@@ -409,15 +464,85 @@ export default function ProductsPage() {
           <option value="sale">Sale</option>
         </select>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Images (one URL per line)</label>
-        <textarea
-          rows={2}
-          value={form.images}
-          onChange={(e) => setForm({ ...form, images: e.target.value })}
-          className="w-full border border-border-subtle rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-mint/20 focus:border-mint transition-all"
-          placeholder={"https://...\nhttps://..."}
-        />
+      {/* Images section */}
+      <div className="space-y-3">
+        <label className="block text-xs font-bold text-text-muted uppercase tracking-widest">
+          Product Images
+        </label>
+
+        {/* Drop zone */}
+        <div
+          className={cn(
+            "relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all",
+            isDragOver
+              ? "border-mint bg-mint/5"
+              : "border-border-subtle hover:border-mint/50 hover:bg-surface-elevated/50"
+          )}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleDrop}
+        >
+          {uploadingImage ? (
+            <div className="flex flex-col items-center gap-2 py-1">
+              <Loader2 className="w-6 h-6 animate-spin text-mint" />
+              <p className="text-xs font-semibold text-text-muted">Uploading…</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-1">
+              <div className="w-10 h-10 rounded-full bg-mint/10 flex items-center justify-center">
+                <ImagePlus className="w-5 h-5 text-mint" />
+              </div>
+              <p className="text-xs font-semibold text-midnight">Click to upload or drag &amp; drop</p>
+              <p className="text-[10px] text-text-muted">JPG, PNG, WEBP, GIF up to 10 MB · multiple files OK</p>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+          />
+        </div>
+
+        {/* Image previews */}
+        {form.images.trim() && (
+          <div className="flex flex-wrap gap-2">
+            {form.images
+              .split("\n")
+              .map((u) => u.trim())
+              .filter(Boolean)
+              .map((url, i) => (
+                <div key={i} className="relative group w-16 h-16">
+                  <img
+                    src={url}
+                    alt={`preview-${i}`}
+                    className="w-full h-full object-cover rounded-xl border border-border-subtle"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = IMG_PLACEHOLDER;
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImageUrl(url)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-coral text-white rounded-full text-xs hidden group-hover:flex items-center justify-center shadow-md transition-all"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-16 h-16 rounded-xl border-2 border-dashed border-border-subtle hover:border-mint/50 flex items-center justify-center text-text-muted hover:text-mint transition-all"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div>
@@ -575,16 +700,19 @@ export default function ProductsPage() {
               ) : (
                 items.map((product) => {
                   const status = statusLabel(product);
-                  const image = product.images?.[0] || "https://placehold.co/100x100";
+                  const image = product.images?.[0] || IMG_PLACEHOLDER;
                   return (
                     <tr key={product.id} className="group hover:bg-surface-elevated/30 transition-colors">
                       <td className="p-5">
                         <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-xl overflow-hidden border border-border-subtle bg-white relative flex-shrink-0">
+                          <div className="w-14 h-14 rounded-xl overflow-hidden border border-border-subtle bg-surface-elevated relative flex-shrink-0">
                             <img
                               src={image}
                               alt={product.name}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = IMG_PLACEHOLDER;
+                              }}
                             />
                           </div>
                           <div className="flex flex-col">
@@ -732,9 +860,12 @@ export default function ProductsPage() {
           <div className="space-y-6">
             <div className="flex items-center gap-6">
               <img
-                src={viewProduct.images?.[0] || "https://placehold.co/200x200"}
+                src={viewProduct.images?.[0] || IMG_PLACEHOLDER}
                 alt={viewProduct.name}
-                className="w-24 h-24 rounded-2xl object-cover border border-border-subtle"
+                className="w-24 h-24 rounded-2xl object-cover border border-border-subtle bg-surface-elevated"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = IMG_PLACEHOLDER;
+                }}
               />
               <div>
                 <h3 className="text-xl font-bold text-midnight">{viewProduct.name}</h3>
